@@ -437,7 +437,7 @@ async def tailor_resume_manual(
         # Since run_resume_tailor_graph is now an async generator yielding string chunks
 
         return StreamingResponse(
-            run_resume_tailor_graph(jd_content, resume_id), media_type="text/event-stream"
+            run_resume_tailor_graph(jd_content, resume_id, master_resume_json), media_type="text/event-stream"
         )
     except HTTPException:
         raise

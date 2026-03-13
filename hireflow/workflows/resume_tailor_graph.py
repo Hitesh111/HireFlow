@@ -11,9 +11,10 @@ from hireflow.models.vector_db import get_vector_store
 class ResumeTailorState(TypedDict):
     job_description: str
     master_resume_id: str
+    master_resume_json: Dict[str, Any]
     jd_analysis: Dict[str, Any]
     retrieved_content: str
-    tailored_resume: Dict[str, Any]
+    tailored_resume: str
 
 async def analyze_jd(state: ResumeTailorState):
     """Analyze the Job Description to extract key requirements."""
@@ -94,44 +95,25 @@ JOB DESCRIPTION ANALYSIS:
 CANDIDATE'S RETRIEVED RELEVANT EXPERIENCE & SKILLS:
 {state.get('retrieved_content', 'No specific context retrieved, use general knowledge if applicable or leave blank.')}
 
-Create a structured JSON resume that highlights the candidate's matching skills and experiences from the retrieved context. Do not invent new experiences not found in the retrieved data, but you may rephrase them to better match the JD keywords.
+CANDIDATE'S ORIGINAL RESUME DATA (FOR PERSONAL INFO, DATES, AND FULL CONTEXT):
+{json.dumps(state.get('master_resume_json', {{}}), indent=2)}
 
-Return EXACTLY this JSON structure:
-{{
-    "summary": "Professional summary paragraph tailored to the JD",
-    "skills": ["relevant skill 1", "relevant skill 2"],
-    "experience": [
-        {{
-            "company": "Company Name",
-            "title": "Job Title",
-            "location": "Location",
-            "date": "Date Range",
-            "description": ["tailored bullet point 1", "tailored bullet point 2"]
-        }}
-    ],
-    "education": [
-        {{
-            "institution": "School Name",
-            "degree": "Degree",
-            "date": "Date"
-        }}
-    ]
-}}
+Create a beautifully formatted professional resume document in **Markdown** format that highlights the candidate's matching skills and experiences from the retrieved context. 
+Do not invent new experiences not found in the retrieved data, but you may rephrase them to better match the JD keywords. Make sure to accurately include the candidate's name, contact information, education, and original dates from the ORIGINAL RESUME DATA.
+
+The output MUST be a complete Markdown text document containing the Name/Header, Professional Summary, Skills, Experience, and Education sections. Do not use markdown code blocks like ```markdown, just output the raw text document directly.
 """
-    system_msg = SystemMessage(content="You are an expert resume algorithm. Always return valid JSON only. Do not wrap in markdown code blocks.")
+    system_msg = SystemMessage(content="You are an expert resume algorithm. Always output a properly formatted professional resume document in raw Markdown text.")
     human_msg = HumanMessage(content=prompt)
     
     response = await llm.ainvoke([system_msg, human_msg])
     content = response.content.strip()
-    if content.startswith("```json"):
-        content = content[7:-3].strip()
+    if content.startswith("```markdown"):
+        content = content[11:-3].strip()
     elif content.startswith("```"):
         content = content[3:-3].strip()
         
-    try:
-        tailored = json.loads(content)
-    except json.JSONDecodeError:
-        tailored = {}
+    tailored = content
         
     return {"tailored_resume": tailored}
 
@@ -154,11 +136,12 @@ app = workflow.compile()
 
 import json
 
-async def run_resume_tailor_graph(job_description: str, master_resume_id: str):
+async def run_resume_tailor_graph(job_description: str, master_resume_id: str, master_resume_json: Dict[str, Any]):
     """Execute the LangGraph workflow and yield Server-Sent Events."""
     inputs = {
         "job_description": job_description,
-        "master_resume_id": master_resume_id
+        "master_resume_id": master_resume_id,
+        "master_resume_json": master_resume_json
     }
     
     # Send initial event
@@ -175,8 +158,8 @@ async def run_resume_tailor_graph(job_description: str, master_resume_id: str):
                 yield f"event: log\ndata: Retrieved relevant experiences from Vector DB.\n\n"
             elif node_name == "draft_resume":
                 yield f"event: log\ndata: Finalizing tailored resume rendering...\n\n"
-                tailored = state_update.get("tailored_resume", {})
-                escaped_json = json.dumps(tailored)
+                tailored = state_update.get("tailored_resume", "")
+                escaped_json = json.dumps({"formatted_resume": tailored})
                 # Ensure no newlines break the SSE data format
                 escaped_json = escaped_json.replace("\n", "\\n")
                 yield f"event: result\ndata: {escaped_json}\n\n"

@@ -94,16 +94,15 @@ export default function Tailor({ addToast }) {
                     if (eventMatch && dataMatch) {
                         const event = eventMatch[1].trim();
                         let dataStr = dataMatch[1].trim();
-                        // Unescape newlines
-                        dataStr = dataStr.replace(/\\n/g, '\n');
-
                         if (event === "log") {
+                            // Unescape newlines for display
+                            dataStr = dataStr.replace(/\\n/g, '\n');
                             setLogs(prev => [...prev, dataStr]);
                         } else if (event === "result") {
                             // Final JSON payload
                             try {
                                 const parsed = JSON.parse(dataStr);
-                                setTailoredResume(parsed);
+                                setTailoredResume(parsed.formatted_resume);
                                 addToast('Resume tailored successfully!', 'success');
                             } catch (e) {
                                 console.error("Failed to parse result JSON:", e);
@@ -123,10 +122,10 @@ export default function Tailor({ addToast }) {
     const handleDownload = () => {
         if (!tailoredResume) return;
 
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tailoredResume, null, 2));
+        const dataStr = "data:text/markdown;charset=utf-8," + encodeURIComponent(tailoredResume);
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "tailored_resume.json");
+        downloadAnchorNode.setAttribute("download", "tailored_resume.md");
         document.body.appendChild(downloadAnchorNode);
         downloadAnchorNode.click();
         downloadAnchorNode.remove();
@@ -148,8 +147,9 @@ export default function Tailor({ addToast }) {
                 </p>
             </header>
 
-            <div className="two-column-layout">
-                <div className="column left-column">
+            <div className="workflow-layout">
+                {/* ----------------- TOP ROW: INPUTS ----------------- */}
+                <div className="inputs-row">
                     {/* Master Resume Card */}
                     <div className="card">
                         <div className="card-header">
@@ -255,29 +255,32 @@ export default function Tailor({ addToast }) {
                                 </div>
                             )}
                         </div>
-                        <div className="card-footer">
-                            <button 
-                                className="btn btn-primary w-full" 
-                                onClick={handleGenerate}
-                                disabled={isLoading || !isReady}
-                            >
-                                {isLoading ? (
-                                    <>
-                                        <div className="spinner"></div>
-                                        <span>Analyzing & Tailoring...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Wand2 size={18} />
-                                        <span>Generate Tailored Resume</span>
-                                    </>
-                                )}
-                            </button>
-                        </div>
                     </div>
                 </div>
 
-                <div className="column right-column">
+                {/* ----------------- MIDDLE ROW: ACTION ----------------- */}
+                <div className="action-row">
+                    <button 
+                        className="btn btn-primary btn-generate" 
+                        onClick={handleGenerate}
+                        disabled={isLoading || !isReady}
+                    >
+                        {isLoading ? (
+                            <>
+                                <div className="spinner-small"></div>
+                                <span>Analyzing & Tailoring...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Wand2 size={20} />
+                                <span>Generate Tailored Resume</span>
+                            </>
+                        )}
+                    </button>
+                </div>
+
+                {/* ----------------- BOTTOM ROW: OUTPUT ----------------- */}
+                <div className="output-row">
                     <div className="card h-full flex flex-col">
                         <div className="card-header flex justify-between items-center">
                             <div className="flex items-center gap-4">
@@ -295,7 +298,7 @@ export default function Tailor({ addToast }) {
                             {tailoredResume && (
                                 <button className="btn btn-outline btn-sm" onClick={handleDownload}>
                                     <Download size={16} />
-                                    <span>Download JSON</span>
+                                    <span>Download Markdown</span>
                                 </button>
                             )}
                         </div>
@@ -325,10 +328,10 @@ export default function Tailor({ addToast }) {
                                 <div className="result-container">
                                     <div className="success-banner">
                                         <Check size={18} />
-                                        <span>Resume tailored successfully! The AI has optimized it into the standard JSON structure.</span>
+                                        <span>Resume tailored successfully! The AI has drafted a professional Markdown document.</span>
                                     </div>
                                     <div className="code-viewer">
-                                        <pre><code>{JSON.stringify(tailoredResume, null, 2)}</code></pre>
+                                        <pre><code>{tailoredResume}</code></pre>
                                     </div>
                                 </div>
                             ) : (
@@ -344,15 +347,42 @@ export default function Tailor({ addToast }) {
             </div>
             
             <style jsx="true">{`
-                .two-column-layout {
+                .workflow-layout {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 32px;
+                    margin-top: 32px;
+                }
+                
+                .inputs-row {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
                     gap: 24px;
-                    margin-top: 24px;
+                }
+
+                .action-row {
+                    display: flex;
+                    justify-content: center;
+                    padding: 16px 0;
+                }
+
+                .btn-generate {
+                    padding: 16px 48px;
+                    font-size: 16px;
+                    border-radius: 30px;
+                    box-shadow: 0 4px 24px rgba(99, 102, 241, 0.4);
+                }
+
+                .btn-generate:hover:not(:disabled) {
+                    transform: translateY(-2px) scale(1.02);
+                }
+
+                .output-row {
+                    width: 100%;
                 }
                 
                 @media (max-width: 1024px) {
-                    .two-column-layout {
+                    .inputs-row {
                         grid-template-columns: 1fr;
                     }
                 }
@@ -365,7 +395,15 @@ export default function Tailor({ addToast }) {
                 .justify-between { justify-content: space-between; }
                 .items-center { align-items: center; }
                 .mb-4 { margin-bottom: 16px; }
-                .w-full { width: 100%; justify-content: center; }
+                
+                .spinner-small {
+                    width: 20px;
+                    height: 20px;
+                    border: 2px solid rgba(255,255,255,0.3);
+                    border-top-color: white;
+                    border-radius: 50%;
+                    animation: spin 0.8s linear infinite;
+                }
                 
                 .card-header {
                     display: flex;

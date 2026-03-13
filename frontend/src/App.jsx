@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Sidebar from './components/Sidebar';
+import Header from './components/Header';
 import Dashboard from './pages/Dashboard';
 import Jobs from './pages/Jobs';
 import Applications from './pages/Applications';
@@ -21,7 +21,7 @@ function App() {
     return (
         <BrowserRouter>
             <div className="app-layout">
-                <Sidebar />
+                <Header />
                 <main className="main-content">
                     <Routes>
                         <Route path="/" element={<Dashboard addToast={addToast} />} />

@@ -96,7 +96,7 @@ CANDIDATE'S RETRIEVED RELEVANT EXPERIENCE & SKILLS:
 {state.get('retrieved_content', 'No specific context retrieved, use general knowledge if applicable or leave blank.')}
 
 CANDIDATE'S ORIGINAL RESUME DATA (FOR PERSONAL INFO, DATES, AND FULL CONTEXT):
-{json.dumps(state.get('master_resume_json', {{}}), indent=2)}
+{json.dumps(state.get('master_resume_json', {}), indent=2)}
 
 Create a beautifully formatted professional resume document in **Markdown** format that highlights the candidate's matching skills and experiences from the retrieved context. 
 Do not invent new experiences not found in the retrieved data, but you may rephrase them to better match the JD keywords. Make sure to accurately include the candidate's name, contact information, education, and original dates from the ORIGINAL RESUME DATA.

@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Upload, FileText, Wand2, Download, Check, AlertCircle } from 'lucide-react';
+import html2pdf from 'html2pdf.js';
+import ResumeTemplate from '../components/ResumeTemplate';
 
 export default function Tailor({ addToast }) {
     // Master Resume State
@@ -16,6 +18,9 @@ export default function Tailor({ addToast }) {
     const [tailoredResume, setTailoredResume] = useState(null);
     const [logs, setLogs] = useState([]);
     const [showThinking, setShowThinking] = useState(false);
+    const [inputScores, setInputScores] = useState(null);
+    const [outputScores, setOutputScores] = useState(null);
+    const pdfRef = useRef(null);
 
     const handleGenerate = async () => {
         if (resumeInputMode === 'file' && !resumeFile) {
@@ -37,7 +42,9 @@ export default function Tailor({ addToast }) {
 
         setIsLoading(true);
         setTailoredResume(null);
-        setLogs([]);
+        setInputScores(null);
+        setOutputScores(null);
+        setLogs([]);  // Clear previous logs when starting a new generation
 
         try {
             const formData = new FormData();
@@ -99,10 +106,16 @@ export default function Tailor({ addToast }) {
                             dataStr = dataStr.replace(/\\n/g, '\n');
                             setLogs(prev => [...prev, dataStr]);
                         } else if (event === "result") {
-                            // Final JSON payload
+                            // Final payload is base64-encoded JSON to avoid SSE newline corruption
                             try {
-                                const parsed = JSON.parse(dataStr);
-                                setTailoredResume(parsed.formatted_resume);
+                                const decodedStr = atob(dataStr);
+                                const parsedEventContent = JSON.parse(decodedStr);
+                                // The backend returns a JSON string inside the formatted_resume key.
+                                const resumeJsonObject = JSON.parse(parsedEventContent.formatted_resume);
+                                setTailoredResume(resumeJsonObject);
+                                // Parse and set scores
+                                if (parsedEventContent.input_scores) setInputScores(parsedEventContent.input_scores);
+                                if (parsedEventContent.output_scores) setOutputScores(parsedEventContent.output_scores);
                                 addToast('Resume tailored successfully!', 'success');
                             } catch (e) {
                                 console.error("Failed to parse result JSON:", e);
@@ -120,16 +133,24 @@ export default function Tailor({ addToast }) {
     };
 
     const handleDownload = () => {
-        if (!tailoredResume) return;
+        if (!tailoredResume || !pdfRef.current) return;
 
-        const dataStr = "data:text/markdown;charset=utf-8," + encodeURIComponent(tailoredResume);
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href", dataStr);
-        downloadAnchorNode.setAttribute("download", "tailored_resume.md");
-        document.body.appendChild(downloadAnchorNode);
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-        addToast('Download started');
+        addToast('Generating PDF sequence initiated...');
+        
+        const opt = {
+            margin:       0,
+            filename:     'tailored_resume.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, logging: false },
+            jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+        
+        html2pdf().set(opt).from(pdfRef.current).save().then(() => {
+            addToast('Resume PDF downloaded successfully!', 'success');
+        }).catch(err => {
+            console.error("PDF generation failed:", err);
+            addToast('Failed to generate PDF', 'error');
+        });
     };
 
     const isReady = (resumeInputMode === 'file' ? !!resumeFile : !!resumeText.trim()) &&
@@ -285,53 +306,108 @@ export default function Tailor({ addToast }) {
                         <div className="card-header flex justify-between items-center">
                             <div className="flex items-center gap-4">
                                 <h2 className="card-title mb-0">3. Tailored Result</h2>
-                                <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer" style={{fontSize: '0.85rem'}}>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={showThinking} 
-                                        onChange={(e) => setShowThinking(e.target.checked)}
-                                        style={{ accentColor: 'var(--primary)' }}
-                                    />
-                                    Show "Thinking"
-                                </label>
+                                {logs.length > 0 && (
+                                    <span
+                                        onClick={() => setShowThinking(v => !v)}
+                                        style={{
+                                            fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                            color: showThinking ? 'var(--primary)' : 'var(--text-muted)',
+                                            background: showThinking ? 'rgba(99,102,241,0.12)' : 'transparent',
+                                            border: '1px solid var(--border)', borderRadius: '20px',
+                                            padding: '3px 10px', transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {showThinking ? '↑ Hide' : '▶ Logs'}
+                                    </span>
+                                )}
                             </div>
                             {tailoredResume && (
-                                <button className="btn btn-outline btn-sm" onClick={handleDownload}>
+                                <button className="btn btn-outline btn-sm" onClick={handleDownload} style={{gap: '8px', display: 'flex', alignItems: 'center', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none'}}>
                                     <Download size={16} />
-                                    <span>Download Markdown</span>
+                                    <span>Download PDF</span>
                                 </button>
                             )}
                         </div>
                         <div className="card-body flex-1 overflow-hidden" style={{ display: 'flex', flexDirection: 'column' }}>
+                            {/* Agent logs panel */}
                             {showThinking && logs.length > 0 && (
-                                <div className="thinking-viewer mb-4">
-                                    <div className="thinking-header">
-                                        <AlertCircle size={14} className="thinking-icon" />
-                                        <span>Agent Logs</span>
-                                    </div>
-                                    <div className="thinking-content">
-                                        {logs.map((log, idx) => (
-                                            <div key={idx} className="log-entry">
-                                                <span className="log-indicator">&gt;</span> {log}
-                                            </div>
-                                        ))}
-                                    </div>
+                                <div style={{background:'#0f172a', borderRadius:'8px', padding:'12px 16px', marginBottom:'16px', border:'1px solid #1e293b'}}>
+                                    {logs.map((log, idx) => (
+                                        <div key={idx} style={{display:'flex', alignItems:'center', gap:'10px', padding:'4px 0'}}>
+                                            <span style={{width:'18px', height:'18px', borderRadius:'50%', background: idx === logs.length - 1 && isLoading ? '#f59e0b' : '#22c55e', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', flexShrink:0}}>✓</span>
+                                            <span style={{fontSize:'12px', color:'#94a3b8'}}>{log}</span>
+                                        </div>
+                                    ))}
+                                    {isLoading && (
+                                        <div style={{display:'flex', alignItems:'center', gap:'10px', padding:'4px 0'}}>
+                                            <div style={{width:'18px', height:'18px', borderRadius:'50%', border:'2px solid #6366f1', borderTopColor:'transparent', animation:'spin 0.8s linear infinite', flexShrink:0}} />
+                                            <span style={{fontSize:'12px', color:'#6366f1'}}>Processing...</span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
                             {isLoading && !tailoredResume ? (
                                 <div className="loading-state">
                                     <div className="spinner large"></div>
-                                    <p>AI is analyzing the inputs and optimizing your resume. This usually takes 10-30 seconds depending on input sizes...</p>
+                                    <p style={{maxWidth:'360px', textAlign:'center'}}>AI is crafting your tailored resume...
+                                        <br/><span style={{fontSize:'12px', opacity:0.6}}>Usually takes 30–60 seconds</span>
+                                    </p>
                                 </div>
                             ) : tailoredResume ? (
-                                <div className="result-container">
-                                    <div className="success-banner">
-                                        <Check size={18} />
-                                        <span>Resume tailored successfully! The AI has drafted a professional Markdown document.</span>
-                                    </div>
-                                    <div className="code-viewer">
-                                        <pre><code>{tailoredResume}</code></pre>
+                                <div className="result-container" style={{backgroundColor: '#0f172a', padding: '24px', borderRadius: '12px', overflowY: 'auto'}}>
+
+                                    {/* ATS Score Cards */}
+                                    {(inputScores || outputScores) && (
+                                        <div style={{marginBottom:'24px'}}>
+                                            <div style={{fontSize:'12px', fontWeight:'700', color:'#64748b', textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:'12px'}}>ATS Compatibility Analysis</div>
+                                            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px'}}>
+                                                {[
+                                                    {label: 'Original Resume', icon: '📄', scores: inputScores, accent: '#f59e0b', dim: true},
+                                                    {label: 'Tailored Resume', icon: '✨', scores: outputScores, accent: '#818cf8', dim: false}
+                                                ].map(({label, icon, scores, accent, dim}) => scores && (
+                                                    <div key={label} style={{background: dim ? '#1a2236' : '#1e1b4b', borderRadius:'10px', padding:'16px', border:`1px solid ${accent}44`, opacity: dim ? 0.85 : 1}}>
+                                                        <div style={{display:'flex', alignItems:'center', gap:'6px', marginBottom:'14px'}}>
+                                                            <span style={{fontSize:'16px'}}>{icon}</span>
+                                                            <span style={{fontSize:'12px', fontWeight:'700', color: accent, textTransform:'uppercase', letterSpacing:'0.05em'}}>{label}</span>
+                                                            <span style={{marginLeft:'auto', fontSize:'20px', fontWeight:'800', color: (() => {const avg = Math.round(Object.values(scores).reduce((a,b)=>a+b,0)/4); return avg >= 80 ? '#22c55e' : avg >= 60 ? '#f59e0b' : '#ef4444';})()}}>
+                                                                {Math.round(Object.values(scores).reduce((a,b)=>a+b,0)/4)}%
+                                                            </span>
+                                                        </div>
+                                                        {[
+                                                            {key: 'jd_match', label: 'JD Match'},
+                                                            {key: 'skills_coverage', label: 'Skills'},
+                                                            {key: 'experience_relevance', label: 'Experience'},
+                                                            {key: 'ats_formatting', label: 'ATS Format'},
+                                                        ].map(({key, label: metricLabel}) => {
+                                                            const val = scores[key] ?? 0;
+                                                            const inputVal = inputScores?.[key] ?? 0;
+                                                            const delta = scores === outputScores ? val - inputVal : null;
+                                                            const color = val >= 80 ? '#22c55e' : val >= 60 ? '#f59e0b' : '#ef4444';
+                                                            return (
+                                                                <div key={key} style={{marginBottom:'9px'}}>
+                                                                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'3px'}}>
+                                                                        <span style={{fontSize:'11px', color:'#64748b'}}>{metricLabel}</span>
+                                                                        <div style={{display:'flex', alignItems:'center', gap:'4px'}}>
+                                                                            {delta !== null && delta !== 0 && <span style={{fontSize:'10px', fontWeight:'700', color: delta > 0 ? '#22c55e' : '#ef4444'}}>{delta > 0 ? '+' : ''}{delta}</span>}
+                                                                            <span style={{fontSize:'11px', fontWeight:'700', color}}>{val}%</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div style={{background:'#1e293b', borderRadius:'3px', height:'5px', overflow:'hidden'}}>
+                                                                        <div style={{width:`${val}%`, height:'100%', background:color, borderRadius:'3px', transition:'width 1.2s cubic-bezier(0.4,0,0.2,1)'}}/>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Resume Preview */}
+                                    <div style={{borderRadius:'8px', overflow:'hidden', boxShadow:'0 20px 60px rgba(0,0,0,0.5)'}}>
+                                        <ResumeTemplate data={tailoredResume} ref={pdfRef} />
                                     </div>
                                 </div>
                             ) : (

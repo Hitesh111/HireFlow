@@ -12,7 +12,7 @@ def get_vector_store() -> Chroma:
         Chroma instance configured with Google Gemini embeddings.
     """
     embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001", google_api_key=settings.gemini_api_key
+        model="models/gemini-embedding-001", google_api_key=settings.active_gemini_api_key
     )
 
     vectorstore = Chroma(

@@ -23,7 +23,7 @@ class GeminiClient:
     """Wrapper for Gemini Pro API with rate limiting and structured output."""
 
     def __init__(self):
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        self.client = genai.Client(api_key=settings.active_gemini_api_key)
         self.model_name = settings.gemini_model
         self.rate_limiter = RateLimiter(
             max_requests=settings.gemini_requests_per_minute,

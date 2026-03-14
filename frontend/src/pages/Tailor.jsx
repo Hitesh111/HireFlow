@@ -1,26 +1,58 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, Download, Check, Settings, X } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileText, Download, Check, Settings, X, Trash2 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import ResumeTemplate from '../components/ResumeTemplate';
 
+const STORAGE_KEY = 'hireflow_tailor_v1';
+
+function loadFromStorage() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); }
+    catch { return null; }
+}
+
 export default function Tailor({ addToast }) {
+    const saved = loadFromStorage();
+
     // Master Resume State
-    const [resumeInputMode, setResumeInputMode] = useState('file'); // 'file' or 'text'
+    const [resumeInputMode, setResumeInputMode] = useState(saved?.resumeInputMode || 'file');
     const [resumeFile, setResumeFile] = useState(null);
-    const [resumeText, setResumeText] = useState('');
+    const [resumeText, setResumeText] = useState(saved?.resumeText || '');
     
     // Job Description State
-    const [jdInputMode, setJdInputMode] = useState('text'); // 'file' or 'text'
+    const [jdInputMode, setJdInputMode] = useState(saved?.jdInputMode || 'text');
     const [jdFile, setJdFile] = useState(null);
-    const [jdText, setJdText] = useState('');
+    const [jdText, setJdText] = useState(saved?.jdText || '');
 
     const [isLoading, setIsLoading] = useState(false);
-    const [tailoredResume, setTailoredResume] = useState(null);
-    const [logs, setLogs] = useState([]);
-    const [showThinking, setShowThinking] = useState(false);
-    const [inputScores, setInputScores] = useState(null);
-    const [outputScores, setOutputScores] = useState(null);
+    const [tailoredResume, setTailoredResume] = useState(saved?.tailoredResume || null);
+    const [logs, setLogs] = useState(saved?.logs || []);
+    const [showThinking, setShowThinking] = useState(true);
+    const [inputScores, setInputScores] = useState(saved?.inputScores || null);
+    const [outputScores, setOutputScores] = useState(saved?.outputScores || null);
+    const [hasChangedInputs, setHasChangedInputs] = useState(false);
     const pdfRef = useRef(null);
+
+    // Mark inputs as changed if user edits anything after a result exists
+    const markChanged = () => { if (tailoredResume) setHasChangedInputs(true); };
+
+    // Persist result state to localStorage whenever it changes
+    useEffect(() => {
+        const snapshot = { resumeInputMode, resumeText, jdInputMode, jdText, tailoredResume, logs, inputScores, outputScores };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    }, [resumeInputMode, resumeText, jdInputMode, jdText, tailoredResume, logs, inputScores, outputScores]);
+
+    const handleClear = () => {
+        setTailoredResume(null);
+        setInputScores(null);
+        setOutputScores(null);
+        setLogs([]);
+        setResumeText('');
+        setJdText('');
+        setResumeFile(null);
+        setJdFile(null);
+        localStorage.removeItem(STORAGE_KEY);
+        addToast('Cleared — start fresh!', 'success');
+    };
 
     const handleGenerate = async () => {
         if (resumeInputMode === 'file' && !resumeFile) return addToast('Please upload a master resume file', 'error');
@@ -29,6 +61,7 @@ export default function Tailor({ addToast }) {
         if (jdInputMode === 'text' && !jdText.trim()) return addToast('Please paste a job description', 'error');
 
         setIsLoading(true);
+        setHasChangedInputs(false);
         setTailoredResume(null);
         setInputScores(null);
         setOutputScores(null);
@@ -104,6 +137,10 @@ export default function Tailor({ addToast }) {
     const isReady = (resumeInputMode === 'file' ? !!resumeFile : !!resumeText.trim()) &&
                     (jdInputMode === 'file' ? !!jdFile : !!jdText.trim());
 
+    // Allow re-generate any time a result exists and user has changed inputs
+    const canGenerate = isReady || (!!tailoredResume && hasChangedInputs);
+    const generateBtnLabel = isLoading ? 'Crafting tailored resume...' : tailoredResume ? 'Generate Again' : 'Generate New Resume';
+
     // Tracking UI State
     const status = tailoredResume ? 'done' : isLoading ? 'current' : 'pending';
 
@@ -115,22 +152,22 @@ export default function Tailor({ addToast }) {
             </div>
 
             {/* Top Row: Two Column Grid for inputs */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 24, marginBottom: 32 }}>
+            <div className="input-grid">
                 
                 {/* Left: Master Resume */}
                 <div className="card" style={{ display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                         <div className="label-caps">1. Master Resume</div>
                         <div className="pill-group">
-                            <button className={`pill-tab ${resumeInputMode === 'file' ? 'active' : ''}`} onClick={() => setResumeInputMode('file')}>File</button>
-                            <button className={`pill-tab ${resumeInputMode === 'text' ? 'active' : ''}`} onClick={() => setResumeInputMode('text')}>Text</button>
+                            <button className={`pill-tab ${resumeInputMode === 'file' ? 'active' : ''}`} onClick={() => { setResumeInputMode('file'); markChanged(); }}>File</button>
+                            <button className={`pill-tab ${resumeInputMode === 'text' ? 'active' : ''}`} onClick={() => { setResumeInputMode('text'); markChanged(); }}>Text</button>
                         </div>
                     </div>
 
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                         {resumeInputMode === 'file' ? (
                             <label className={`upload-zone ${resumeFile ? 'loaded' : ''}`} style={{ flex: 1 }}>
-                                <input type="file" accept=".pdf,.json,.docx" style={{ display: 'none' }} onChange={e => setResumeFile(e.target.files[0])} />
+                                <input type="file" accept=".pdf,.json,.docx" style={{ display: 'none' }} onChange={e => { setResumeFile(e.target.files[0]); markChanged(); }} />
                                 {resumeFile ? (
                                     <>
                                         <Check size={24} style={{ color: 'var(--success)', marginBottom: 12 }} />
@@ -145,7 +182,7 @@ export default function Tailor({ addToast }) {
                                 )}
                             </label>
                         ) : (
-                            <textarea className="form-textarea" style={{ flex: 1, minHeight: 200 }} placeholder="Paste Master Resume text..." value={resumeText} onChange={e => setResumeText(e.target.value)} />
+                            <textarea className="form-textarea" style={{ flex: 1, minHeight: 200 }} placeholder="Paste Master Resume text..." value={resumeText} onChange={e => { setResumeText(e.target.value); markChanged(); }} />
                         )}
                     </div>
                 </div>
@@ -155,20 +192,20 @@ export default function Tailor({ addToast }) {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                         <div className="label-caps">2. Job Description</div>
                         <div className="pill-group">
-                            <button className={`pill-tab ${jdInputMode === 'text' ? 'active' : ''}`} onClick={() => setJdInputMode('text')}>Text</button>
-                            <button className={`pill-tab ${jdInputMode === 'file' ? 'active' : ''}`} onClick={() => setJdInputMode('file')}>File</button>
+                            <button className={`pill-tab ${jdInputMode === 'text' ? 'active' : ''}`} onClick={() => { setJdInputMode('text'); markChanged(); }}>Text</button>
+                            <button className={`pill-tab ${jdInputMode === 'file' ? 'active' : ''}`} onClick={() => { setJdInputMode('file'); markChanged(); }}>File</button>
                         </div>
                     </div>
 
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                         {jdInputMode === 'text' ? (
                             <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                <textarea className="form-textarea jd-textarea" style={{ flex: 1, minHeight: 200 }} placeholder="Paste the Job Description..." value={jdText} onChange={e => setJdText(e.target.value)} />
+                                <textarea className="form-textarea jd-textarea" style={{ flex: 1, minHeight: 200 }} placeholder="Paste the Job Description..." value={jdText} onChange={e => { setJdText(e.target.value); markChanged(); }} />
                                 <div style={{ position: 'absolute', bottom: 12, right: 12, fontSize: 10, color: 'var(--text-muted)' }}>{jdText.length} chars</div>
                             </div>
                         ) : (
                             <label className={`upload-zone ${jdFile ? 'loaded' : ''}`} style={{ flex: 1 }}>
-                                <input type="file" accept=".pdf,.docx,.txt" style={{ display: 'none' }} onChange={e => setJdFile(e.target.files[0])} />
+                                <input type="file" accept=".pdf,.docx,.txt" style={{ display: 'none' }} onChange={e => { setJdFile(e.target.files[0]); markChanged(); }} />
                                 {jdFile ? (
                                     <>
                                         <Check size={24} style={{ color: 'var(--success)', marginBottom: 12 }} />
@@ -210,9 +247,9 @@ export default function Tailor({ addToast }) {
                     className="btn btn-primary" 
                     style={{ width: '100%', maxWidth: 400, padding: '16px 24px', fontSize: 16 }} 
                     onClick={handleGenerate} 
-                    disabled={!isReady || isLoading}
+                    disabled={!canGenerate || isLoading}
                 >
-                    {isLoading ? 'Crafting tailored resume...' : 'Generate New Resume'}
+                    {generateBtnLabel}
                 </button>
             </div>
 
@@ -221,11 +258,18 @@ export default function Tailor({ addToast }) {
                 <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                     <div style={{ padding: 24, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div className="label-caps">3. Tailored Result</div>
-                        {tailoredResume && (
-                            <button className="btn btn-primary btn-sm" onClick={handleDownload}>
-                                <Download size={14} color="#1C1917"/> Download PDF
-                            </button>
-                        )}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {tailoredResume && (
+                                <button className="btn btn-ghost btn-sm" onClick={handleClear} title="Clear and start fresh">
+                                    <Trash2 size={14} /> Clear
+                                </button>
+                            )}
+                            {tailoredResume && (
+                                <button className="btn btn-primary btn-sm" onClick={handleDownload}>
+                                    <Download size={14} color="#1C1917"/> Download PDF
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Agent Logs (Toggleable) */}
@@ -256,59 +300,77 @@ export default function Tailor({ addToast }) {
                                 <p>This takes 20-40 seconds. We're matching your history against the JD constraints.</p>
                             </div>
                         ) : tailoredResume && (
-                            <div style={{ display: 'grid', gridTemplateColumns: '350px 1fr', gap: 32, alignItems: 'start' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                                 
-                                {/* Left Side: Score Cards */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                                    
-                                    {/* Original ATS Card */}
-                                    {inputScores && (
-                                        <div className="ats-card original">
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                                                <div className="label-caps">Original Resume</div>
-                                                <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(Object.values(inputScores).reduce((a,b)=>a+b,0)/4)}%</div>
-                                            </div>
-                                            {Object.entries(inputScores).map(([k, v]) => (
-                                                <div key={k} style={{ marginBottom: 12 }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
-                                                        <span style={{textTransform:'capitalize'}}>{k.replace('_', ' ')}</span>
-                                                        <span>{v}%</span>
-                                                    </div>
-                                                    <div className="score-track"><div className="score-fill neutral" style={{ width: `${v}%` }}/></div>
+                                {/* Top Row: Score Cards side-by-side */}
+                                {(inputScores || outputScores) && (
+                                    <div className="score-grid">
+                                        {/* Original ATS Card */}
+                                        {inputScores && (
+                                            <div className="ats-card original">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+                                                    <div className="label-caps">Original Resume</div>
+                                                    <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(Object.values(inputScores).reduce((a,b)=>a+b,0)/4)}%</div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {/* Tailored ATS Card */}
-                                    {outputScores && (
-                                        <div className="ats-card tailored">
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                                                <div className="label-caps" style={{ color: 'var(--yellow-dark)' }}>Tailored Match</div>
-                                                <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(Object.values(outputScores).reduce((a,b)=>a+b,0)/4)}%</div>
-                                            </div>
-                                            {Object.entries(outputScores).map(([k, v]) => {
-                                                const origV = inputScores ? inputScores[k] : 0;
-                                                const diff = v - origV;
-                                                return (
-                                                <div key={k} style={{ marginBottom: 12 }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                                                        <span style={{textTransform:'capitalize', fontWeight: 600}}>{k.replace('_', ' ')}</span>
-                                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                                            {diff > 0 && <span style={{ color: 'var(--success)' }}>+{diff}</span>}
-                                                            <span style={{ fontWeight: 600 }}>{v}%</span>
+                                                {Object.entries(inputScores).map(([k, v]) => (
+                                                    <div key={k} style={{ marginBottom: 12 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4, color: 'var(--text-secondary)' }}>
+                                                            <span style={{textTransform:'capitalize'}}>{k.replace('_', ' ')}</span>
+                                                            <span>{v}%</span>
                                                         </div>
+                                                        <div className="score-track"><div className="score-fill neutral" style={{ width: `${v}%` }}/></div>
                                                     </div>
-                                                    <div className="score-track"><div className="score-fill yellow" style={{ width: `${v}%` }}/></div>
-                                                </div>
-                                            )})}
-                                        </div>
-                                    )}
-                                </div>
+                                                ))}
+                                            </div>
+                                        )}
 
-                                {/* Right Side: Resume Preview Canvas */}
-                                <div style={{ backgroundColor: '#fff', borderRadius: 'var(--radius-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
-                                    <ResumeTemplate data={tailoredResume} ref={pdfRef} />
+                                        {/* Tailored ATS Card */}
+                                        {outputScores && (
+                                            <div className="ats-card tailored">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+                                                    <div className="label-caps" style={{ color: 'var(--yellow-dark)' }}>Tailored Match</div>
+                                                    <div style={{ fontSize: 18, fontWeight: 800 }}>{Math.round(Object.values(outputScores).reduce((a,b)=>a+b,0)/4)}%</div>
+                                                </div>
+                                                {Object.entries(outputScores).map(([k, v]) => {
+                                                    const origV = inputScores ? inputScores[k] : 0;
+                                                    const diff = v - origV;
+                                                    return (
+                                                    <div key={k} style={{ marginBottom: 12 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                                                            <span style={{textTransform:'capitalize', fontWeight: 600}}>{k.replace('_', ' ')}</span>
+                                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                                {diff > 0 && <span style={{ color: 'var(--success)' }}>+{diff}</span>}
+                                                                <span style={{ fontWeight: 600 }}>{v}%</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="score-track"><div className="score-fill yellow" style={{ width: `${v}%` }}/></div>
+                                                    </div>
+                                                )})}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Full-width Resume Preview */}
+                                <div style={{ 
+                                    backgroundColor: 'var(--bg-card)', 
+                                    borderRadius: 'var(--radius-card)', 
+                                    border: '1px solid var(--border)', 
+                                    width: '100%',
+                                    overflowX: 'auto',
+                                    padding: 'var(--space-4)'
+                                }}>
+                                    <div style={{
+                                        minWidth: '650px', // Prevent the resume from getting too narrow for fonts/layout
+                                        maxWidth: '850px',
+                                        margin: '0 auto',
+                                        aspectRatio: '8.5 / 11',
+                                        backgroundColor: '#fff',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                                        borderRadius: '4px'
+                                    }}>
+                                        <ResumeTemplate data={tailoredResume} ref={pdfRef} />
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -341,6 +403,10 @@ export default function Tailor({ addToast }) {
 
                 .spin-icon { animation: spin 1.2s linear infinite; }
                 @keyframes spin { 100% { transform: rotate(360deg); } }
+                @keyframes pulse-btn {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(253, 224, 71, 0.5); }
+                    50% { box-shadow: 0 0 0 8px rgba(253, 224, 71, 0); }
+                }
 
                 .ats-card {
                     padding: 20px;

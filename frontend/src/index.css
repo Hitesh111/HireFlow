@@ -687,3 +687,149 @@ select.form-input {
 
 .step-item.done .step-line { background-color: var(--success); }
 .step-item.pending .step-line, .step-item.current .step-line { background-color: var(--border); }
+
+/* ===== Responsive Grid Helpers ===== */
+.input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.score-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ===== Mobile Bottom Nav ===== */
+.mobile-bottom-nav {
+  display: none;
+}
+
+/* ===== Mobile Responsive ===== */
+@media (max-width: 768px) {
+  /* ---- Header ---- */
+  .header { height: 48px; }
+
+  .header-nav { display: none; } /* Hidden on mobile — replaced by bottom nav */
+
+  .header-container { padding: 0 var(--space-4); }
+
+  .version-string { display: none; }
+
+  /* ---- Main Content ---- */
+  .main-content {
+    padding: var(--space-5) var(--space-4);
+    /* Leave space for bottom nav (64px) + safe area */
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page-title { font-size: 20px; }
+
+  /* ---- Cards & Grids ---- */
+  .card { padding: var(--space-4); }
+
+  /* All 2-column grids → single column */
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="gridTemplateColumns: '1fr 1fr'"],
+  [style*="minmax(0, 1fr) minmax(0, 1fr)"],
+  [style*="gridTemplateColumns: 'minmax"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Dashboard Stats Grid */
+  .stat-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: var(--space-3) !important;
+  }
+
+  /* Pill groups wrap nicely */
+  .pill-group { flex-wrap: wrap; }
+
+  /* NudgeBar stacks on mobile */
+  .nudge-bar {
+    flex-direction: column;
+    gap: var(--space-2);
+    text-align: center;
+  }
+
+  /* ATS score cards (horizontal on desktop → vertical on mobile, already stacked) */
+  .page-header { margin-bottom: var(--space-5); }
+
+  /* ---- Bottom Navigation ---- */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(64px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background-color: var(--bg-card);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    align-items: center;
+    justify-content: space-around;
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: 1;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: color 150ms ease;
+    padding-bottom: 4px;
+  }
+
+  .mobile-nav-item:hover { color: var(--text-primary); }
+
+  .mobile-nav-item.active { color: var(--yellow-dark); }
+
+  .mobile-nav-item.primary {
+    /* Tailor Resume — big yellow pill in center */
+    flex: 1.5;
+    color: #1C1917;
+    background-color: var(--yellow);
+    border-radius: 14px;
+    margin: 10px 6px;
+    height: calc(100% - 20px);
+    padding-bottom: 0;
+    font-weight: 700;
+    font-size: 11px;
+    gap: 4px;
+    transition: background-color 150ms ease, transform 100ms ease;
+  }
+
+  .mobile-nav-item.primary:hover,
+  .mobile-nav-item.primary:active {
+    background-color: var(--yellow-pop);
+    color: #1C1917;
+    transform: scale(0.97);
+  }
+
+  .mobile-nav-item.primary.active {
+    background-color: var(--yellow);
+    box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.25);
+    color: #1C1917;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content { padding: var(--space-4) var(--space-3); padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+
+  .page-title { font-size: 18px; }
+
+  .page-subtitle { font-size: 13px; }
+
+  .btn { font-size: 13px; padding: 8px 14px; }
+
+  .stat-grid { grid-template-columns: 1fr !important; }
+}

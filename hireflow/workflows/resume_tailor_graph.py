@@ -3,6 +3,8 @@ import base64
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
 from hireflow.config import settings
@@ -17,16 +19,47 @@ class ResumeTailorState(TypedDict):
     retrieved_content: str
     tailored_resume: str
     input_scores: Dict[str, Any]
+    input_scores: Dict[str, Any]
     output_scores: Dict[str, Any]
+
+def _get_fallback_llm(temperature: float = 0.1, max_retries: int = 1):
+    """Returns a Gemini LLM configured with Groq and OpenRouter fallbacks if keys are available."""
+    gemini = ChatGoogleGenerativeAI(
+        model=settings.gemini_model,
+        google_api_key=settings.active_gemini_api_key,
+        temperature=temperature,
+        max_retries=max_retries
+    )
+    
+    fallbacks = []
+    
+    if settings.groq_api_key:
+        groq = ChatGroq(
+            model="llama-3.3-70b-versatile",
+            api_key=settings.groq_api_key,
+            temperature=temperature,
+            max_retries=max_retries
+        )
+        fallbacks.append(groq)
+        
+    if settings.openrouter_api_key:
+        openrouter = ChatOpenAI(
+            model="anthropic/claude-3-haiku",
+            api_key=settings.openrouter_api_key,
+            base_url="https://openrouter.ai/api/v1",
+            temperature=temperature,
+            max_retries=max_retries
+        )
+        fallbacks.append(openrouter)
+        
+    if fallbacks:
+        return gemini.with_fallbacks(fallbacks)
+    
+    return gemini
 
 async def analyze_jd(state: ResumeTailorState):
     """Analyze the Job Description to extract key requirements."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=settings.active_gemini_api_key,
-        temperature=0.1,
-        max_retries=1
-    )
+    llm = _get_fallback_llm(temperature=0.1, max_retries=1)
     
     prompt = f"""Analyze the following job description and extract the key requirements.
 Return JSON with the following structure:
@@ -85,12 +118,7 @@ async def retrieve_experiences(state: ResumeTailorState):
 
 async def draft_resume(state: ResumeTailorState):
     """Draft the final tailored resume JSON using the retrieved experiences."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=settings.active_gemini_api_key,
-        temperature=0.2,
-        max_retries=1
-    )
+    llm = _get_fallback_llm(temperature=0.2, max_retries=1)
     
     # Extract values BEFORE building f-string to avoid {{}} TypeError bug
     master_resume_data = state.get('master_resume_json', {})
@@ -134,19 +162,21 @@ async def draft_resume(state: ResumeTailorState):
 JOB DESCRIPTION ANALYSIS:
 {jd_analysis_str}
 
-CANDIDATE'S RETRIEVED RELEVANT EXPERIENCE & SKILLS:
+CANDIDATE'S RETRIEVED HIGH-PRIORITY CONTEXT:
 {retrieved_content}
 
-CANDIDATE'S ORIGINAL RESUME DATA (FOR PERSONAL INFO, DATES, AND FULL CONTEXT):
+CANDIDATE'S ORIGINAL RESUME DATA (USE THIS AS THE BASE STRUCTURAL FOUNDATION):
 {master_resume_str}
 
 Create a tailored resume that strongly matches the Job Description.
 Return ONLY valid JSON with this exact structure (no markdown blocks or other text):
 {json_schema_example}
 
-Do not invent new experiences not found in the retrieved data, but you may rephrase them to better match the JD keywords.
-
-CRITICAL: For personal_info (name, email, phone, links), you MUST copy the values EXACTLY as they appear in the ORIGINAL RESUME DATA above. Do NOT use any placeholder values from the JSON schema example. If the original resume does not contain a value, use an empty string or empty list.
+CRITICAL INSTRUCTIONS TO PREVENT DATA LOSS:
+1. You MUST preserve ALL sections from the ORIGINAL RESUME. Do NOT delete any jobs from "experience", any entries from "education", or any entries from "projects".
+2. You must keep the original company names, job titles, project names, and dates EXACTLY as they appear in the ORIGINAL RESUME DATA.
+3. Your job is to TAILOR the 'summary', the 'skills' list, and the 'description' bullet points within the experiences/projects to better match the Job Description Analysis and the High-Priority Context.
+4. For personal_info (name, email, phone, links), copy the values EXACTLY from the ORIGINAL RESUME. Do NOT use placeholders. If missing, use empty strings/lists.
 """
     system_msg = SystemMessage(content="You are an expert resume algorithm. Always output valid JSON. Do not wrap in markdown code blocks.")
     human_msg = HumanMessage(content=prompt)
@@ -169,12 +199,7 @@ CRITICAL: For personal_info (name, email, phone, links), you MUST copy the value
 
 async def score_resumes(state: ResumeTailorState):
     """Score both the original and tailored resume against the JD."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=settings.active_gemini_api_key,
-        temperature=0.0,
-        max_retries=1
-    )
+    llm = _get_fallback_llm(temperature=0.0, max_retries=1)
 
     jd_analysis_str = json.dumps(state['jd_analysis'], indent=2)
     original_resume_str = json.dumps(state.get('master_resume_json', {}), indent=2)
@@ -271,7 +296,7 @@ async def run_resume_tailor_graph(job_description: str, master_resume_id: str, m
     }
     
     # Send initial event
-    yield "event: log\ndata: Starting resume tailoring workflow...\n\n"
+    yield "event: log\ndata: 🚀 Reading your resume and the job description...\n\n"
     
     # Cache the tailored resume from draft_resume node so score_resumes can use it
     cached_tailored = ""
@@ -282,15 +307,15 @@ async def run_resume_tailor_graph(job_description: str, master_resume_id: str, m
         # output is a dict like {"analyze_jd": {"jd_analysis": ...}}
         for node_name, state_update in output.items():
             if node_name == "analyze_jd":
-                yield "event: log\ndata: Analyzed job description successfully.\n\n"
+                yield "event: log\ndata: 🔍 Mapped the key skills and requirements from the job posting.\n\n"
             elif node_name == "retrieve_experiences":
-                yield "event: log\ndata: Retrieved relevant experiences from Vector DB.\n\n"
+                yield "event: log\ndata: ✨ Found your most relevant experiences for this role.\n\n"
             elif node_name == "draft_resume":
-                yield "event: log\ndata: Finalizing tailored resume rendering...\n\n"
+                yield "event: log\ndata: ✍️ Writing your tailored resume — almost there!\n\n"
                 # Cache locally — score_resumes state_update won't include tailored_resume
                 cached_tailored = state_update.get("tailored_resume", "")
             elif node_name == "score_resumes":
-                yield "event: log\ndata: Scoring resumes against job description...\n\n"
+                yield "event: log\ndata: 📊 Calculating your ATS match score — done!\n\n"
                 input_scores = state_update.get("input_scores", {})
                 output_scores = state_update.get("output_scores", {})
                 payload = {
@@ -304,11 +329,7 @@ async def run_resume_tailor_graph(job_description: str, master_resume_id: str, m
 
 async def parse_resume_to_json(resume_text: str) -> Dict[str, Any]:
     """Parse raw resume text into the standard JSON structure using Langchain."""
-    llm = ChatGoogleGenerativeAI(
-        model=settings.gemini_model,
-        google_api_key=settings.active_gemini_api_key,
-        temperature=0.1
-    )
+    llm = _get_fallback_llm(temperature=0.1)
     
     prompt = f"""Convert the following resume text into a structured JSON object.
 
